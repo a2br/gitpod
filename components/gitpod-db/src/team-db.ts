@@ -13,6 +13,7 @@ export interface TeamDB {
     findTeamsByUser(userId: string): Promise<Team[]>;
     createTeam(userId: string, name: string): Promise<Team>;
     addMemberToTeam(userId: string, teamId: string): Promise<void>;
+    removeMemberFromTeam(userId: string, teamId: string): Promise<void>;
     findTeamMembershipInviteById(inviteId: string): Promise<TeamMembershipInvite>;
     findGenericInviteByTeamId(teamId: string): Promise<TeamMembershipInvite | undefined>;
     resetGenericInvite(teamId: string): Promise<TeamMembershipInvite>;

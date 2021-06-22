@@ -4,26 +4,31 @@
  * See License-AGPL.txt in the project root for license information.
  */
 
-import { TeamMemberInfo, TeamMembershipInvite } from "@gitpod/gitpod-protocol";
+import { TeamMemberInfo, TeamMemberRole, TeamMembershipInvite } from "@gitpod/gitpod-protocol";
 import moment from "moment";
 import { useContext, useEffect, useState } from "react";
-import { useLocation } from "react-router";
+import { useHistory, useLocation } from "react-router";
 import Header from "../components/Header";
 import DropDown from "../components/DropDown";
 import { ItemsList, Item, ItemField, ItemFieldContextMenu } from "../components/ItemsList";
 import Modal from "../components/Modal";
-import { getGitpodService } from "../service/service";
 import copy from '../images/copy.svg';
+import { getGitpodService } from "../service/service";
+import { UserContext } from "../user-context";
 import { TeamsContext, getCurrentTeam } from "./teams-context";
 
 
 export default function() {
-    const { teams } = useContext(TeamsContext);
+    const { user } = useContext(UserContext);
+    const { teams, setTeams } = useContext(TeamsContext);
+    const history = useHistory();
     const location = useLocation();
     const team = getCurrentTeam(location, teams);
     const [ members, setMembers ] = useState<TeamMemberInfo[]>([]);
     const [ genericInvite, setGenericInvite ] = useState<TeamMembershipInvite>();
     const [ showInviteModal, setShowInviteModal ] = useState<boolean>(false);
+    const [ searchText, setSearchText ] = useState<string>('');
+    const [ roleFilter, setRoleFilter ] = useState<TeamMemberRole | undefined>();
 
     useEffect(() => {
         if (!team) {
@@ -41,7 +46,7 @@ export default function() {
 
     const getInviteURL = (inviteId: string) => {
         const link = new URL(window.location.href);
-        link.pathname = '/join-team';
+        link.pathname = '/teams/join';
         link.search = '?inviteId=' + inviteId;
         return link.href;
     }
@@ -70,6 +75,33 @@ export default function() {
         }
     }
 
+    const removeTeamMember = async (userId: string) => {
+        await getGitpodService().server.removeTeamMember(team!.id, userId);
+        const newTeams = await getGitpodService().server.getTeams();
+        if (newTeams.some(t => t.id === team!.id)) {
+            // We're still a member of this team.
+            const newMembers = await getGitpodService().server.getTeamMembers(team!.id);
+            setMembers(newMembers);
+        } else {
+            // We're no longer a member of this team (note: we navigate away first in order to avoid a 404).
+            history.push('/');
+            setTeams(newTeams);
+        }
+    }
+
+    const getFilteredMembers = () => {
+        return members.filter(m => {
+            if (!!roleFilter && m.role !== roleFilter) {
+                return false;
+            }
+            const memberSearchText = `${m.fullName||''}${m.primaryEmail||''}`.toLocaleLowerCase();
+            if (!memberSearchText.includes(searchText.toLocaleLowerCase())) {
+                return false;
+            }
+            return true;
+        });
+    }
+
     return <>
         <Header title="Members" subtitle="Manage team members." />
         <div className="lg:px-28 px-10">
@@ -78,19 +110,19 @@ export default function() {
                     <div className="py-4">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 16 16" width="16" height="16"><path fill="#A8A29E" d="M6 2a4 4 0 100 8 4 4 0 000-8zM0 6a6 6 0 1110.89 3.477l4.817 4.816a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 010 6z"/></svg>
                     </div>
-                    <input type="search" placeholder="Search Members" onChange={() => { /* TODO */ }} />
+                    <input type="search" placeholder="Search Members" onChange={e => setSearchText(e.target.value)} />
                 </div>
                 <div className="flex-1" />
                 <div className="py-3 pl-3">
                     <DropDown prefix="Role: " contextMenuWidth="w-32" activeEntry={'All'} entries={[{
                         title: 'All',
-                        onClick: () => { /* TODO */ }
+                        onClick: () => setRoleFilter(undefined)
                     }, {
                         title: 'Owner',
-                        onClick: () => { /* TODO */ }
+                        onClick: () => setRoleFilter('owner')
                     }, {
                         title: 'Member',
-                        onClick: () => { /* TODO */ }
+                        onClick: () => setRoleFilter('member')
                     }]} />
                 </div>
                 <button onClick={() => setShowInviteModal(true)} className="ml-2">Invite Members</button>
@@ -100,15 +132,16 @@ export default function() {
                     <ItemField>
                         <span className="pl-14">Name</span>
                     </ItemField>
-                    <ItemField>
+                    <ItemField className="flex items-center space-x-1">
                         <span>Joined</span>
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" className="h-4 w-4" viewBox="0 0 16 16"><path fill="#A8A29E" fill-rule="evenodd" d="M13.366 8.234a.8.8 0 010 1.132l-4.8 4.8a.8.8 0 01-1.132 0l-4.8-4.8a.8.8 0 111.132-1.132L7.2 11.67V2.4a.8.8 0 111.6 0v9.269l3.434-3.435a.8.8 0 011.132 0z" clip-rule="evenodd"/></svg>
                     </ItemField>
                     <ItemField className="flex items-center">
                         <span className="flex-grow">Role</span>
                         <ItemFieldContextMenu />
                     </ItemField>
                 </Item>
-                {members.map(m => <Item className="grid grid-cols-3">
+                {getFilteredMembers().map(m => <Item className="grid grid-cols-3" key={m.userId}>
                     <ItemField className="flex items-center">
                         <div className="w-14">{m.avatarUrl && <img className="rounded-full w-8 h-8" src={m.avatarUrl || ''} alt={m.fullName} />}</div>
                         <div>
@@ -123,10 +156,10 @@ export default function() {
                         <span className="text-gray-400 flex-grow capitalize">{m.role}</span>
                         <ItemFieldContextMenu menuEntries={[
                             {
-                                title: 'Remove',
+                                title: (m.userId === user?.id) ? 'Leave Team' : 'Remove',
                                 customFontStyle: 'text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300',
-                                onClick: () => { /* TODO(janx) */ }
-                            },
+                                onClick: () => removeTeamMember(m.userId)
+                            }
                         ]} />
                     </ItemField>
                 </Item>)}

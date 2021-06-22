@@ -43,6 +43,9 @@ export default function Menu() {
     const showTeamsUI = user?.rolesOrPermissions?.includes('teams-and-projects') || window.location.hostname.endsWith('gitpod-dev.com') || window.location.hostname.endsWith('gitpod-io-dev.com');
     const team = getCurrentTeam(location, teams);
 
+    // Hide most of the top menu when in a full-page form.
+    const isMinimalUI = ['/new', '/teams/new'].includes(location.pathname);
+
     const [ teamMembers, setTeamMembers ] = useState<Record<string, TeamMemberInfo[]>>({});
     useEffect(() => {
         if (!showTeamsUI || !teams) {
@@ -106,7 +109,7 @@ export default function Menu() {
                     <Link to="/">
                         <img src={gitpodIcon} className="h-6" />
                     </Link>
-                    <div className="ml-2 text-base">
+                    {!isMinimalUI && <div className="ml-2 text-base">
                         {showTeamsUI
                             ? <ContextMenu classes="w-64 left-0" menuEntries={[
                                 {
@@ -136,7 +139,7 @@ export default function Menu() {
                                         <span className="flex-1 font-semibold">New Team</span>
                                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 14 14" className="w-3.5"><path fill="currentColor" fill-rule="evenodd" d="M7 0a1 1 0 011 1v5h5a1 1 0 110 2H8v5a1 1 0 11-2 0V8H1a1 1 0 010-2h5V1a1 1 0 011-1z" clip-rule="evenodd"/></svg>
                                     </div>,
-                                    onClick: () => history.push("/new-team"),
+                                    onClick: () => history.push("/teams/new"),
                                 }
                             ]}>
                                 <div className="flex p-1.5 pl-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800">
@@ -153,13 +156,13 @@ export default function Menu() {
                                 </ul>
                             </nav>
                         }
-                    </div>
+                    </div>}
                 </div>
                 <div className="flex flex-1 items-center w-auto" id="menu">
                     <nav className="flex-1">
                         <ul className="flex flex-1 items-center justify-between text-base text-gray-700 space-x-2">
                             <li className="flex-1"></li>
-                            {rightMenu.map(entry => <li key={entry.title}>
+                            {!isMinimalUI && rightMenu.map(entry => <li key={entry.title}>
                                 <PillMenuItem name={entry.title} selected={isSelected(entry, location)} link={entry.link}/>
                             </li>)}
                         </ul>
@@ -186,10 +189,10 @@ export default function Menu() {
                     </div>
                 </div>
             </div>
-            {showTeamsUI && <div className="flex">
+            {!isMinimalUI && showTeamsUI && <div className="flex">
                 {leftMenu.map(entry => <TabMenuItem name={entry.title} selected={isSelected(entry, location)} link={entry.link}/>)}
             </div>}
         </header>
-        {showTeamsUI && <Separator />}
+        {!isMinimalUI && showTeamsUI && <Separator />}
     </>;
 }

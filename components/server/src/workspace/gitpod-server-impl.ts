@@ -1390,7 +1390,7 @@ export class GitpodServerImpl<Client extends GitpodClient, Server extends Gitpod
     }
 
     public async getTeamMembers(teamId: string): Promise<TeamMemberInfo[]> {
-        this.checkUser("getTeamMemberships");
+        this.checkUser("getTeamMembers");
         const team = await this.teamDB.findTeamById(teamId);
         if (!team) {
             throw new ResponseError(ErrorCodes.NOT_FOUND, "Team not found");
@@ -1415,6 +1415,13 @@ export class GitpodServerImpl<Client extends GitpodClient, Server extends Gitpod
         await this.teamDB.addMemberToTeam(user.id, invite.teamId);
         const team = await this.teamDB.findTeamById(invite.teamId);
         return team!;
+    }
+
+    public async removeTeamMember(teamId: string, userId: string): Promise<void> {
+        const user = this.checkUser("removeTeamMember");
+        // Users are free to leave any team themselves, but only owners can remove others from their teams.
+        await this.guardTeamOperation(teamId, user.id === userId ? "get" : "update");
+        await this.teamDB.removeMemberFromTeam(userId, teamId);
     }
 
     public async getGenericInvite(teamId: string): Promise<TeamMembershipInvite> {
