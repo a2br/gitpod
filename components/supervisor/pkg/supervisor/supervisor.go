@@ -95,6 +95,14 @@ const (
 	KindGit = "git"
 )
 
+type ShutdownReason int16
+
+const (
+	ShutdownReasonSuccess        ShutdownReason = 0
+	ShutdownReasonExecutionError ShutdownReason = 1
+	ShutdownReasonTaskError      ShutdownReason = wsk8s.PrebuildTaskErrorExitCode
+)
+
 // Run serves as main entrypoint to the supervisor
 func Run(options ...RunOption) {
 	defer log.Info("supervisor shut down")
@@ -148,7 +156,7 @@ func Run(options ...RunOption) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	var (
-		shutdown            = make(chan *bool, 1)
+		shutdown            = make(chan ShutdownReason, 1)
 		ideReady            = &ideReadyState{cond: sync.NewCond(&sync.Mutex{})}
 		cstate              = NewInMemoryContentState(cfg.RepoRoot)
 		gitpodService       = createGitpodService(cfg, tokenService)
@@ -240,7 +248,7 @@ func Run(options ...RunOption) {
 			}
 
 			log.Error("metadata access is possible - shutting down")
-			close(shutdown)
+			shutdown <- ShutdownReasonExecutionError
 		}()
 	}
 
@@ -249,10 +257,8 @@ func Run(options ...RunOption) {
 	var exitCode int
 	select {
 	case <-sigChan:
-	case tasksSuccess := <-shutdown:
-		if tasksSuccess != nil && !*tasksSuccess {
-			exitCode = wsk8s.PrebuildTaskErrorExitCode
-		}
+	case shutdownReason := <-shutdown:
+		exitCode = int(shutdownReason)
 	}
 
 	log.Info("received SIGTERM (or shutdown) - tearing down")
@@ -766,12 +772,16 @@ func tunnelOverSSH(ctx context.Context, tunneled *ports.TunneledPortsService, ne
 	<-ctx.Done()
 }
 
-func stopWhenTasksAreDone(ctx context.Context, wg *sync.WaitGroup, shutdown chan *bool, successChan <-chan bool) {
+func stopWhenTasksAreDone(ctx context.Context, wg *sync.WaitGroup, shutdown chan ShutdownReason, successChan <-chan bool) {
 	defer wg.Done()
 	defer close(shutdown)
 
 	success := <-successChan
-	shutdown <- &success
+	if success {
+		shutdown <- ShutdownReasonSuccess
+	} else {
+		shutdown <- ShutdownReasonTaskError
+	}
 }
 
 func startSSHServer(ctx context.Context, cfg *Config, wg *sync.WaitGroup) {

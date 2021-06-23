@@ -752,7 +752,15 @@ func (m *Monitor) finalizeWorkspaceContent(ctx context.Context, wso *workspaceOb
 		}
 	}()
 
+	tpe, err := wso.WorkspaceType()
+	if err != nil {
+		tracing.LogError(span, err)
+		log.WithError(err).Warn("cannot determine workspace type - assuming this is a regular")
+		tpe = api.WorkspaceType_REGULAR
+	}
+
 	doBackup := wso.WasEverReady() && !wso.IsWorkspaceHeadless()
+	doSnapshot := tpe == api.WorkspaceType_PREBUILD
 	doFinalize := func() (worked bool, gitStatus *csapi.GitStatus, err error) {
 		m.finalizerMapLock.Lock()
 		_, alreadyFinalizing := m.finalizerMap[workspaceID]
@@ -766,7 +774,7 @@ func (m *Monitor) finalizeWorkspaceContent(ctx context.Context, wso *workspaceOb
 		// we don't have a hostIP we don't need to dipose the workspace.
 		// Obviously that only holds if we do not require a backup. If we do require one, we want to
 		// fail as loud as we can in this case.
-		if !doBackup && wso.HostIP() == "" {
+		if !doBackup && !doSnapshot && wso.HostIP() == "" {
 			// we don't need a backup and have never spoken to ws-daemon: we're good here.
 			m.finalizerMapLock.Unlock()
 			return true, &csapi.GitStatus{}, nil
@@ -783,14 +791,7 @@ func (m *Monitor) finalizeWorkspaceContent(ctx context.Context, wso *workspaceOb
 		m.finalizerMap[workspaceID] = cancelReq
 		m.finalizerMapLock.Unlock()
 
-		tpe, err := wso.WorkspaceType()
-		if err != nil {
-			tracing.LogError(span, err)
-			log.WithError(err).Warn("cannot determine workspace type - assuming this is a regular")
-			tpe = api.WorkspaceType_REGULAR
-		}
-
-		if tpe == api.WorkspaceType_PREBUILD {
+		if doSnapshot {
 			// if this is a prebuild take a snapshot and mark the workspace
 			var res *wsdaemon.TakeSnapshotResponse
 			res, err = snc.TakeSnapshot(ctx, &wsdaemon.TakeSnapshotRequest{Id: workspaceID})
@@ -862,7 +863,7 @@ func (m *Monitor) finalizeWorkspaceContent(ctx context.Context, wso *workspaceOb
 		}
 
 		// service was available, we've tried to do the work and failed. Tell the world about it.
-		if doBackup && isGRPCError {
+		if (doBackup || doSnapshot) && isGRPCError {
 			switch st.Code() {
 			case codes.DataLoss:
 				// ws-daemon told us that it's lost data

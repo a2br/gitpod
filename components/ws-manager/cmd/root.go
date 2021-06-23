@@ -18,7 +18,6 @@ import (
 	"github.com/gitpod-io/gitpod/common-go/tracing"
 	"github.com/gitpod-io/gitpod/content-service/pkg/storage"
 	"github.com/gitpod-io/gitpod/ws-manager/pkg/manager"
-	"github.com/spf13/cobra"
 )
 
 var (
